@@ -16,6 +16,13 @@ import {
 } from "./db";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
+import { featureFlags } from "../shared/featureFlags";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const UPLOADS_DIR = path.resolve(__dirname, "../uploads");
 
 // Admin guard middleware
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -103,14 +110,34 @@ export const appRouter = router({
           dataUrl: z.string(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         // Convert base64 data URL to buffer
         const base64Data = input.dataUrl.replace(/^data:[^;]+;base64,/, "");
         const buffer = Buffer.from(base64Data, "base64");
         const ext = input.filename.split(".").pop() ?? "jpg";
-        const key = `paintings/${nanoid()}.${ext}`;
-        const { url } = await storagePut(key, buffer, input.contentType);
-        return { url, key };
+        const uniqueName = `${nanoid()}.${ext}`;
+
+        if (featureFlags.isStoreLocally) {
+          // ── Local storage mode ──────────────────────────────────────────
+          // Ensure uploads directory exists
+          if (!fs.existsSync(UPLOADS_DIR)) {
+            fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+          }
+          const filePath = path.join(UPLOADS_DIR, uniqueName);
+          fs.writeFileSync(filePath, buffer);
+
+          // Build a URL pointing to the /uploads static route on the same server
+          const protocol = ctx.req.protocol ?? "http";
+          const host = ctx.req.headers.host ?? "localhost:3000";
+          const url = `${protocol}://${host}/uploads/${uniqueName}`;
+          const key = `uploads/${uniqueName}`;
+          return { url, key };
+        } else {
+          // ── S3 cloud storage mode ────────────────────────────────────────
+          const key = `paintings/${uniqueName}`;
+          const { url } = await storagePut(key, buffer, input.contentType);
+          return { url, key };
+        }
       }),
   }),
 

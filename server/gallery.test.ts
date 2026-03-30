@@ -3,6 +3,23 @@ import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 import type { User } from "../drizzle/schema";
 
+// Mock featureFlags - default to local storage for most tests
+vi.mock("../shared/featureFlags", () => ({
+  featureFlags: { isStoreLocally: true },
+}));
+
+// Mock fs to avoid actual file writes during tests
+vi.mock("fs", () => ({
+  default: {
+    existsSync: vi.fn().mockReturnValue(true),
+    mkdirSync: vi.fn(),
+    writeFileSync: vi.fn(),
+  },
+  existsSync: vi.fn().mockReturnValue(true),
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
+}));
+
 // ─── Mock DB helpers ──────────────────────────────────────────────────────────
 
 vi.mock("./db", () => ({
@@ -181,6 +198,50 @@ describe("paintings.create (admin only)", () => {
     await expect(
       caller.paintings.create({ title: "Test", imageUrl: "https://example.com/test.jpg" })
     ).rejects.toThrow();
+  });
+});
+
+describe("paintings.uploadImage - local storage mode (isStoreLocally: true)", () => {
+  it("stores image locally and returns a /uploads URL", async () => {
+    const caller = appRouter.createCaller(makeAdminCtx());
+    const result = await caller.paintings.uploadImage({
+      filename: "dog.jpg",
+      contentType: "image/jpeg",
+      dataUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRgAB",
+    });
+    expect(result.url).toContain("/uploads/");
+    expect(result.key).toMatch(/^uploads\/.+\.jpg$/);
+  });
+
+  it("rejects non-admin users from uploading", async () => {
+    const caller = appRouter.createCaller(makeUserCtx());
+    await expect(
+      caller.paintings.uploadImage({
+        filename: "dog.jpg",
+        contentType: "image/jpeg",
+        dataUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRgAB",
+      })
+    ).rejects.toThrow();
+  });
+});
+
+describe("paintings.uploadImage - S3 mode (isStoreLocally: false)", () => {
+  it("uploads to S3 and returns a CDN URL when isStoreLocally is false", async () => {
+    // Temporarily override the flag for this test
+    const { featureFlags } = await import("../shared/featureFlags");
+    (featureFlags as { isStoreLocally: boolean }).isStoreLocally = false;
+
+    const caller = appRouter.createCaller(makeAdminCtx());
+    const result = await caller.paintings.uploadImage({
+      filename: "dog.png",
+      contentType: "image/png",
+      dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    });
+    expect(result.url).toContain("cdn.example.com");
+    expect(result.key).toMatch(/^paintings\/.+\.png$/);
+
+    // Restore flag
+    (featureFlags as { isStoreLocally: boolean }).isStoreLocally = true;
   });
 });
 

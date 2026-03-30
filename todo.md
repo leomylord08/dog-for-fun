@@ -32,4 +32,12 @@
 ## Quality & Delivery
 - [x] Responsive design (mobile, tablet, desktop)
 - [x] Vitest tests for backend routers (16 tests passing)
-- [ ] GitHub push to leomylord08/dog-for-fun
+- [x] GitHub push to leomylord08/dog-for-fun
+
+## Feature Flags & Local Storage
+- [x] Create shared/featureFlags.ts with isStoreLocally = true
+- [x] Create uploads/ folder with .gitkeep
+- [x] Update uploadImage procedure to store locally when isStoreLocally is true
+- [x] Serve /uploads static route via Express when local storage is active
+- [x] Update tests to cover both storage paths
+- [x] Push changes to GitHub
